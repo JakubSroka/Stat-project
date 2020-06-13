@@ -1,0 +1,280 @@
+---
+title: "Student alcohol consumption"
+author: "Marek Fudaliński && Jakub Sroka"
+date: "5/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Dataset
+
+dataset obtained from: https://www.kaggle.com/uciml/student-alcohol-consumption
+
+### Context:
+The data were obtained in a survey of students math courses in secondary school. It contains a lot of interesting social, gender and study information about students. You can use it for some EDA or try to predict students final grade.  
+
+In ths notebook we will be trying to predict student alcohol consumption based on available data  
+ 
+school - student's school (binary: 'GP' - Gabriel Pereira or 'MS' - Mousinho da Silveira)  
+sex - student's sex (binary: 'F' - female or 'M' - male)  
+age - student's age (numeric: from 15 to 22)  
+address - student's home address type (binary: 'U' - urban or 'R' - rural)  
+famsize - family size (binary: 'LE3' - less or equal to 3 or 'GT3' - greater than 3)  
+Pstatus - parent's cohabitation status (binary: 'T' - living together or 'A' - apart)  
+Medu - mother's education (numeric: 0 - none, 1 - primary education (4th grade), 2 – 5th to 9th grade, 3 – secondary education or 4 – higher education)  
+Fedu - father's education (numeric: 0 - none, 1 - primary education (4th grade), 2 – 5th to 9th grade, 3 – secondary education or 4 – higher education)  
+Mjob - mother's job (nominal: 'teacher', 'health' care related, civil 'services' (e.g. administrative or police), 'at_home' or 'other')  
+Fjob - father's job (nominal: 'teacher', 'health' care related, civil 'services' (e.g. administrative or police), 'at_home' or 'other')  
+reason - reason to choose this school (nominal: close to 'home', school 'reputation', 'course' preference or 'other')  
+guardian - student's guardian (nominal: 'mother', 'father' or 'other')  
+traveltime - home to school travel time (numeric: 1 - 1 hour)  
+studytime - weekly study time (numeric: 1 - 10 hours)  
+failures - number of past class failures (numeric: n if 1<=n<3, else 4)  
+schoolsup - extra educational support (binary: yes or no)  
+famsup - family educational support (binary: yes or no)  
+paid - extra paid classes within the course subject (Math or Portuguese) (binary: yes or no)  
+activities - extra-curricular activities (binary: yes or no)  
+nursery - attended nursery school (binary: yes or no)  
+higher - wants to take higher education (binary: yes or no)  
+internet - Internet access at home (binary: yes or no)  
+romantic - with a romantic relationship (binary: yes or no)  
+famrel - quality of family relationships (numeric: from 1 - very bad to 5 - excellent)  
+freetime - free time after school (numeric: from 1 - very low to 5 - very high)  
+goout - going out with friends (numeric: from 1 - very low to 5 - very high)  
+Dalc - workday alcohol consumption (numeric: from 1 - very low to 5 - very high)  
+Walc - weekend alcohol consumption (numeric: from 1 - very low to 5 - very high)  
+health - current health status (numeric: from 1 - very bad to 5 - very good)  
+absences - number of school absences (numeric: from 0 to 93)  
+
+These grades are related with the Math course:
+
+G1 - first period grade (numeric: from 0 to 20)  
+G2 - second period grade (numeric: from 0 to 20)  
+G3 - final grade (numeric: from 0 to 20, output target)  
+
+## First look at dataset
+
+```{r mat-student}
+matStudentds <- read.csv("data/student-mat.csv", header = TRUE)
+head(matStudentds, 3)
+```
+
+```{r summary}
+summary(matStudentds)
+```
+
+## Data Preparation
+
+```{r data-preparation}
+matStudentds$alc <- ceiling((as.numeric(matStudentds$Walc) + as.numeric(matStudentds$Dalc)) / 2)
+matStudentds$alc
+data <- subset(matStudentds, select = -c(Walc, Dalc))
+head(data, 1)
+```
+
+
+
+### Linear regression to find alcohol consumption
+
+```{r reg}
+library(MASS)
+attach(data)
+lmFit <- lm(alc ~ ., data = data)
+summary(lmFit)
+
+```
+
+Based on regresssion on all parametrs now we can check which parameters are significant and create a subset of the for further analysis. Just based on this test we can assume that the biggest risk of excesive alcohol consumptions exists within males that have bad relationship with their family, and often go out with their friends. This assumptions seems reasonable even without tests.
+
+### Slimer model
+
+```{r subset}
+
+dataFiltered <-  subset(data, select =  c(sex, address, Fjob, reason, paid, activities, nursery, famrel, goout, health, absences, alc))
+detach(data)
+attach(dataFiltered)
+head(dataFiltered, 1)
+```
+
+```{r fit}
+lmSlimFit <- lm(alc ~ ., data = dataFiltered)
+summary(lmSlimFit)
+```
+
+Since only paramater that left and is not category type field is no. absences we will check if there are some other than linear relations between this value and alc.
+
+```{r absences} 
+ab <- lm(alc ~ poly(absences, 3))
+summary(ab)
+```
+
+We can observer significant relation up to second power, further results give high lvl of Pr(>|t|) and shouldn't be included.
+
+```{r alc-absence}
+absenc <- lm(alc ~ poly(absences, 2))
+plot(absenc)
+```
+
+## Logistic prediction 
+
+```{r pred log}
+dataFilteredProblem <- dataFiltered
+detach(dataFiltered)
+dataFilteredProblem$alcProblem <- dataFiltered$alc > 2
+dataFilteredProblem$alcProblem
+dataFilteredProblem <- subset(dataFilteredProblem, select = -c(alc))
+
+smp_size <- floor(0.8 * nrow(dataFilteredProblem))
+
+set.seed(123)
+train_ind <- sample(seq_len(nrow(dataFilteredProblem)), size = smp_size)
+
+train <- dataFilteredProblem[train_ind, ]
+test <- dataFilteredProblem[-train_ind, ]
+
+head(train,2)
+```
+
+```{r fit log}
+fit.logistic <- glm(train$alcProblem ~ ., data = train)
+summary(fit.logistic)
+
+probs.logistic <- predict(fit.logistic, type = "response")
+head(probs.logistic)
+
+pred.logistic <- ifelse(probs.logistic > 0.5, TRUE, FALSE)
+
+mean(pred.logistic != train$alcProblem)
+```
+
+```{r fit log simple}
+fit.logisticSimple <- glm(train$alcProblem ~ sex + goout, data = train)
+
+summary(fit.logisticSimple)
+
+probs.logisticSimple <- predict(fit.logisticSimple, type = "response")
+head(probs.logisticSimple)
+
+pred.logisticSimple <- ifelse(probs.logisticSimple > 0.5, TRUE, FALSE)
+
+mean(pred.logisticSimple != train$alcProblem)
+```
+
+
+```{r test }
+anova(fit.logisticSimple, fit.logistic)
+```
+
+```{r test2}
+probs.logistic <- predict(fit.logistic, test, type = "response")
+pred.logistic <- ifelse(probs.logistic > 0.5, TRUE, FALSE)
+mean(pred.logistic != test$alcProblem)
+
+probs.logisticSimple <- predict(fit.logisticSimple, test, type = "response")
+pred.logisticSimple <- ifelse(probs.logisticSimple > 0.5, TRUE, FALSE)
+mean(pred.logisticSimple != test$alcProblem)
+```
+
+
+### LDA
+
+```{r lda}
+fit.lda <- lda(train$alcProblem ~ ., data = train)
+summary(fit.lda)
+
+pred.lda <- predict(fit.lda, test)
+
+table(pred.lda$class, test$alcProblem)
+mean(pred.lda$class != test$alcProblem)
+```
+
+```{r qda}
+fit.qda <- qda(train$alcProblem ~ ., data = train)
+summary(fit.qda)
+
+pred.qda <- predict(fit.qda, test)
+
+table(pred.qda$class, test$alcProblem)
+mean(pred.qda$class != test$alcProblem)
+```
+
+
+## Cross validation on bigger deegree simple model 
+
+
+```{r cross validation}
+library(boot)
+max.degree <- 5
+
+dataFilteredCV <- dataFilteredProblem
+dataFilteredCV$sex= as.integer(as.factor(dataFilteredCV$sex))
+dataFilteredCV$famrel= as.integer(as.factor(dataFilteredCV$famrel))
+dataFilteredCV$alcProblem= as.integer(dataFilteredCV$alcProblem)
+dataFilteredCV <- subset(dataFilteredCV, select = c(sex, famrel, alcProblem))
+dataFilteredCV <- dataFilteredCV[1:390, ]
+attach(dataFilteredCV)
+comp.mse.cv <- function(degree, k) {
+  fit.glm <- glm(alcProblem ~ poly(sex, famrel), data = dataFilteredCV)
+  cv.glm(dataFilteredCV, fit.glm, K = k)$delta[1]
+}
+
+mse <- sapply(1:max.degree, comp.mse.cv, k = 10)
+mse
+detach(dataFilteredCV)
+```
+
+## Classification to specific group with KNN
+
+```{r knn}
+
+dataFilteredKNN <- dataFiltered
+dataFilteredKNN$sex= as.integer(as.factor(dataFilteredKNN$sex))
+dataFilteredKNN$address= as.integer(as.factor(dataFilteredKNN$address))
+dataFilteredKNN$Fjob= as.integer(as.factor(dataFilteredKNN$Fjob))
+dataFilteredKNN$reason= as.integer(as.factor(dataFilteredKNN$reason))
+dataFilteredKNN$paid= as.integer(as.factor(dataFilteredKNN$paid))
+dataFilteredKNN$activities= as.integer(as.factor(dataFilteredKNN$activities))
+dataFilteredKNN$nursery= as.integer(as.factor(dataFilteredKNN$nursery))
+
+smp_size <- floor(0.8 * nrow(dataFilteredKNN))
+
+set.seed(123)
+train_ind <- sample(seq_len(nrow(dataFilteredKNN)), size = smp_size)
+
+train <- dataFilteredKNN[train_ind, ]
+test <- dataFilteredKNN[-train_ind, ]
+
+library(class)
+pred.knn.1 <- knn(train, test, train$alc, k = 1)
+table(pred.knn.1, test$alc)
+mean(pred.knn.1 != test$alc)
+
+pred.knn.2 <- knn(train, test, train$alc, k = 2)
+table(pred.knn.2, test$alc)
+mean(pred.knn.2 != test$alc)
+
+pred.knn.3 <- knn(train, test, train$alc, k = 3)
+table(pred.knn.3, test$alc)
+mean(pred.knn.3 != test$alc)
+
+pred.knn.4 <- knn(train, test, train$alc, k = 4)
+table(pred.knn.4, test$alc)
+mean(pred.knn.4 != test$alc)
+```
+
+
+## Summary 
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+
