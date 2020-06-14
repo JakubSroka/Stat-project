@@ -252,26 +252,367 @@ pred.knn.1 <- knn(train, test, train$alc, k = 1)
 table(pred.knn.1, test$alc)
 mean(pred.knn.1 != test$alc)
 
-pred.knn.2 <- knn(train, test, train$alc, k = 2)
-table(pred.knn.2, test$alc)
-mean(pred.knn.2 != test$alc)
+#pred.knn.2 <- knn(train, test, train$alc, k = 2)
+#table(pred.knn.2, test$alc)
+#mean(pred.knn.2 != test$alc)
 
 pred.knn.3 <- knn(train, test, train$alc, k = 3)
 table(pred.knn.3, test$alc)
 mean(pred.knn.3 != test$alc)
 
-pred.knn.4 <- knn(train, test, train$alc, k = 4)
-table(pred.knn.4, test$alc)
-mean(pred.knn.4 != test$alc)
+#pred.knn.4 <- knn(train, test, train$alc, k = 4)
+#table(pred.knn.4, test$alc)
+#mean(pred.knn.4 != test$alc)
+
+#adding 5 7 (most common)
+
+pred.knn.5 <- knn(train, test, train$alc, k = 5)
+table(pred.knn.5, test$alc)
+mean(pred.knn.5 != test$alc)
+
+pred.knn.7 <- knn(train, test, train$alc, k = 7)
+table(pred.knn.7, test$alc)
+mean(pred.knn.7 != test$alc)
 ```
 
+
+
+
+## Feature selection in non-lenear models 
+Using default regsubsets from leaps library so only max 8 features are sselected.
+
+This part seems sensless but whatever
+
+
+```{r}
+library(leaps)
+fit.bs <- regsubsets(alc ~ .,data = data,nvmax = 10)
+summary(fit.bs)
+fit.bs.summary$cp
+bic.min <- which.min(fit.bs.summary$bic)
+bic.min
+fit.bs.summary$bic[bic.min]
+
+plot(fit.bs.summary$bic, xlab = "Liczba zmiennych", ylab = "BIC", col = "green",
+     type = "b", pch = 20)
+points(bic.min, fit.bs.summary$bic[bic.min], col = "red", pch = 9)
+
+plot(fit.bs, scale = "bic")
+
+coef(fit.bs, id = 6)
+
+#bic Schwartz's information criterion, BIC
+
+
+```
+
+As we can see in the above analysis the best choice is to take 6 features namely:
+sexM, addressU, studytime, paidyes, famrel, goout.
+
+
+## Regularization GLMNET
+
+
+Preparing variables
+```{r }
+library(glmnet)
+X <- model.matrix(alc ~ ., data = data)[, -1]
+y <- data$alc
+```
+
+
+
+```{r }
+print(head(data,3))
+```
+
+```{r }
+print(head(y,3))
+```
+```{r }
+print(head(X,3))
+```
+
+
+```{r }
+set.seed(1)
+n <- nrow(X)
+train <- sample(1:n, n / 2)
+test <- -train
+fit.ridge <- glmnet(X[train,], y[train], alpha = 0, lambda = lambda.grid,
+                    thresh = 1e-12)
+```
+
+
+```{r }
+set.seed(1)
+cv.out <- cv.glmnet(X[train,], y[train], alpha = 0)
+plot(cv.out)
+cv.out$lambda.min
+```
+
+Minimal lambda
+```{r }
+pred.ridge <- predict(fit.ridge, s = cv.out$lambda.min, newx = X[test,])
+mean((pred.ridge - y[test])^2)
+```
+
+Least squares method
+```{r }
+pred.ridge <- predict(fit.ridge, s = 0, newx = X[test,])
+mean((pred.ridge - y[test])^2)
+```
+
+Somehow we have better results for λ=1
+```{r }
+pred.ridge <- predict(fit.ridge, s = 1, newx = X[test,])
+mean((pred.ridge - y[test])^2)
+```
+
+
+
+```{r }
+fit.ridge.full <- glmnet(X, y, alpha = 0)
+predict(fit.ridge.full, s = cv.out$lambda.min, type = "coefficients")
+```
+
+
+```{r }
+fit.ridge.full <- glmnet(X, y, alpha = 0)
+predict(fit.ridge.full, s = 1, type = "coefficients")
+```
+
+#Lasso
+
+```{r }
+fit.lasso <- glmnet(X[train,], y[train], alpha = 1)
+plot(fit.lasso, xvar = "lambda")
+```
+
+
+```{r }
+cv.out <- cv.glmnet(X[train,], y[train], alpha = 1)
+plot(cv.out)
+cv.out$lambda.min
+pred.lasso <- predict(fit.lasso, s = cv.out$lambda.min, newx = X[test,])
+mean((pred.lasso - y[test])^2)
+```
+
+
+```{r }
+fit.lasso.full <- glmnet(X, y, alpha = 1)
+predict(fit.lasso.full, s = cv.out$lambda.min, type = "coefficients")[1:20,]
+```
+
+#Step function
+
+step funcion for absences
+```{r }
+#X y
+attach(data)
+absences.lims <- range(absences)
+absences.grid <- seq(absences.lims[1], absences.lims[2])
+
+#print(data$absences)
+table(cut(absences, breaks = 6))
+
+fit.step <- lm(alc ~ cut(absences, 6), data = data)
+pred.step <- predict(fit.step, list(absences = absences.grid), se.fit = TRUE)
+se.bands <- cbind(pred.step$fit + 2 * pred.step$se.fit, 
+                  pred.step$fit - 2 * pred.step$se.fit)
+plot(absences, alc, col = "darkgrey", cex = 0.5, xlim = absences.lims)
+lines(absences.grid, pred.step$fit, col = "red", lwd = 2)
+matlines(absences.grid, se.bands, col = "red", lty = "dashed")
+
+detach(data)
+
+
+```
+```{r }
+attach(data)
+age.lims <- range(age)
+age.grid <- seq(age.lims[1], age.lims[2])
+
+studytime.lims <- range(studytime)
+studytime.grid <- seq(studytime.lims[1], studytime.lims[2])
+
+detach(data)
+```
+step function for age
+
+```{r }
+#X y
+attach(data)
+age.lims <- range(age)
+age.grid <- seq(age.lims[1], age.lims[2])
+
+#print(data$age)
+table(cut(age, breaks = 6))
+
+fit.step <- lm(alc ~ cut(age, 6), data = data)
+pred.step <- predict(fit.step, list(age = age.grid), se.fit = TRUE)
+se.bands <- cbind(pred.step$fit + 2 * pred.step$se.fit, 
+                  pred.step$fit - 2 * pred.step$se.fit)
+plot(age, alc, col = "darkgrey", cex = 0.5, xlim = age.lims)
+lines(age.grid, pred.step$fit, col = "red", lwd = 2)
+matlines(age.grid, se.bands, col = "red", lty = "dashed")
+
+#plot(age,alc)
+detach(data)
+```
+
+##Natural splines
+
+###Absences
+```{r }
+library(splines)
+attach(data)
+fit.ns <- lm(alc ~ ns(absences, df = 4), data = data)
+pred.ns <- predict(fit.ns, list(absences = absences.grid), se.fit = TRUE)
+plot(absences, alc, cex = 0.5, col = "darkgrey")
+lines(absences.grid, pred.ns$fit, col = "red", lwd = 2)
+lines(absences.grid, pred.ns$fit + 2 * pred.ns$se.fit, col = "red",
+      lty = "dashed")
+lines(absences.grid, pred.ns$fit - 2 * pred.ns$se.fit, col = "red",
+      lty = "dashed")
+abline(v = attr(ns(absences, df = 4), "knots"), lty = "dotted")
+detach(data)
+```
+
+###Studytime
+```{r }
+library(splines)
+attach(data)
+fit.ns <- lm(alc ~ ns(studytime, df = 4), data = data)
+pred.ns <- predict(fit.ns, list(studytime = studytime.grid), se.fit = TRUE)
+plot(studytime, alc, cex = 0.5, col = "darkgrey")
+lines(studytime.grid, pred.ns$fit, col = "red", lwd = 2)
+lines(studytime.grid, pred.ns$fit + 2 * pred.ns$se.fit, col = "red",
+      lty = "dashed")
+lines(studytime.grid, pred.ns$fit - 2 * pred.ns$se.fit, col = "red",
+      lty = "dashed")
+abline(v = attr(ns(studytime, df = 4), "knots"), lty = "dotted")
+detach(data)
+```
+
+##Decision Trees
+###First we are going to classiffy simply high or low consumption 
+```{r }
+attach(data)
+
+library(tree)
+# <= 1 daje 25%
+# <= 2 daje 17%
+# <= 3 daje 7%
+
+High <- factor(ifelse(alc <= 2, "No", "Yes"))
+alcH <- data.frame(alc,High)
+
+alc.high.tree <- tree(High ~ . - alc, data = data)
+summary(alc.high.tree)
+
+plot(alc.high.tree)
+text(alc.high.tree, pretty = 0)
+
+detach(data)
+
+```
+
+
+```{r }
+alc.high.tree
+```
+Most important predicators are at the top of the tree and the ones which splits set into two subset of the closest size.
+
+
+
+```{r }
+attach(data)
+set.seed(1)
+n <- nrow(data)
+train <- sample(1:n, n / 2)
+test <- -train
+alc.high.tree <- tree(High ~ . - alc, data = data, subset = train)
+tree.class <- predict(alc.high.tree, newdata = data[test,], type = "class")
+table(tree.class, alcH$High[test])
+mean(tree.class != alcH$High[test])
+plot(alc.high.tree)
+text(alc.high.tree, pretty = 0)
+detach(data)
+```
+
+###pruning
+```{r }
+attach(data)
+set.seed(1)
+alc.high.cv <- cv.tree(alc.high.tree, FUN = prune.misclass)
+alc.high.cv
+plot(alc.high.cv$size, alc.high.cv$dev, type = "b")
+
+size.opt <- alc.high.cv$size[which.min(alc.high.cv$dev)]
+alc.high.pruned <- prune.misclass(alc.high.tree, best = size.opt)
+plot(alc.high.pruned)
+text(alc.high.pruned, pretty = 0)
+
+pruned.class <- predict(alc.high.pruned, newdata = data[test,], 
+                        type = "class")
+table(pruned.class, alcH$High[test])
+mean(pruned.class != alcH$High[test])
+print(alc.high.pruned)
+detach(data)
+```
+
+After pruning optimal tree has only 2 levels and most important nodes are: gout and G3(final grade). estimated error rate is equal to around 26%
+
+
+## Random forests
+
+### Bagging
+```{r }
+attach(data)
+library(randomForest)
+alc.bag <- randomForest(alc ~ ., data = data, mtry = 3, importance = TRUE)
+alc.bag
+
+plot(alc.bag, type = "l")
+
+importance(alc.bag)
+varImpPlot(alc.bag)
+detach(data)
+```
+
+
+```{r }
+attach(data)
+set.seed(1)
+alc.bag <- randomForest(alc ~ ., data = data, subset = train, mtry = 3,
+                         importance = TRUE,ntree = 250)
+alc.pred.bag <- predict(alc.bag, newdata = data[test,])
+mean((alc.pred.bag - data$alc[test])^2)
+
+
+detach(data)
+```
+
+
+```{r }
+attach(data)
+set.seed(2)
+alc.bag.s <- randomForest(alc ~ ., data = data, subset = train, mtry = 3,
+                         importance = TRUE, ntree = 10)
+alc.pred.bag <- predict(alc.bag.s, newdata = data[test,])
+mean((alc.pred.bag - data$alc[test])^2)
+
+detach(data)
+```
 
 ## Summary 
 
 
-## Including Plots
 
-You can also embed plots, for example:
+MF: what is this??
+## Including Plots
+You can also embed plots, for example: 
 
 ```{r pressure, echo=FALSE}
 plot(pressure)
