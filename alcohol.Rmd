@@ -2,7 +2,9 @@
 title: "Student alcohol consumption"
 author: "Marek Fudaliński && Jakub Sroka"
 date: "5/13/2020"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -278,16 +280,13 @@ mean(pred.knn.7 != test$alc)
 
 
 
-## Feature selection in non-lenear models 
-Using default regsubsets from leaps library so only max 8 features are sselected.
-
-This part seems sensless but whatever
-
+## Feature selection in non-linear models 
+Using default regsubsets from leaps library so only max 12 features are sselected.
 
 ```{r}
 library(leaps)
-fit.bs <- regsubsets(alc ~ .,data = data,nvmax = 10)
-summary(fit.bs)
+fit.bs <- regsubsets(alc ~ .,data = data,nvmax = 12)
+fit.bs.summary <- summary(fit.bs)
 fit.bs.summary$cp
 bic.min <- which.min(fit.bs.summary$bic)
 bic.min
@@ -299,15 +298,15 @@ points(bic.min, fit.bs.summary$bic[bic.min], col = "red", pch = 9)
 
 plot(fit.bs, scale = "bic")
 
-coef(fit.bs, id = 6)
+coef(fit.bs, id = 9)
 
 #bic Schwartz's information criterion, BIC
 
 
 ```
 
-As we can see in the above analysis the best choice is to take 6 features namely:
-sexM, addressU, studytime, paidyes, famrel, goout.
+As we can see in the above analysis the best choice is to take 9 features namely:
+sexM, addressU, Fjobservices, studytime, paidyes, activitiesyes, famrel, goout, absences.
 
 
 ## Regularization GLMNET
@@ -317,7 +316,7 @@ Preparing variables
 ```{r }
 library(glmnet)
 X <- model.matrix(alc ~ ., data = data)[, -1]
-y <- data$alc
+y <- data$alc > 2
 ```
 
 
@@ -326,6 +325,7 @@ y <- data$alc
 print(head(data,3))
 ```
 
+Features which we want to predict
 ```{r }
 print(head(y,3))
 ```
@@ -333,8 +333,10 @@ print(head(y,3))
 print(head(X,3))
 ```
 
-
+(grzbietowa)
 ```{r }
+lambda.grid <- 10^seq(10, -2, length.out = 100)
+fit.ridge <- glmnet(X, y, alpha = 0, lambda = lambda.grid)
 set.seed(1)
 n <- nrow(X)
 train <- sample(1:n, n / 2)
@@ -356,6 +358,8 @@ Minimal lambda
 pred.ridge <- predict(fit.ridge, s = cv.out$lambda.min, newx = X[test,])
 mean((pred.ridge - y[test])^2)
 ```
+Square error 0.17 in thic case means that only 60% of cases were properly classfied. (we need to make root to calculate accuracy)
+
 
 Least squares method
 ```{r }
@@ -397,7 +401,7 @@ cv.out$lambda.min
 pred.lasso <- predict(fit.lasso, s = cv.out$lambda.min, newx = X[test,])
 mean((pred.lasso - y[test])^2)
 ```
-
+blad 0.18 means 43% failours in prediction
 
 ```{r }
 fit.lasso.full <- glmnet(X, y, alpha = 1)
@@ -409,47 +413,54 @@ predict(fit.lasso.full, s = cv.out$lambda.min, type = "coefficients")[1:20,]
 step funcion for absences
 ```{r }
 #X y
-attach(data)
+dataTmp <- data
+attach(dataTmp)
+dataTmp$alc <- dataTmp$alc > 2
+
+
 absences.lims <- range(absences)
 absences.grid <- seq(absences.lims[1], absences.lims[2])
 
 #print(data$absences)
 table(cut(absences, breaks = 6))
 
-fit.step <- lm(alc ~ cut(absences, 6), data = data)
+fit.step <- lm(alc ~ cut(absences, 6), data = dataTmp)
 pred.step <- predict(fit.step, list(absences = absences.grid), se.fit = TRUE)
 se.bands <- cbind(pred.step$fit + 2 * pred.step$se.fit, 
                   pred.step$fit - 2 * pred.step$se.fit)
-plot(absences, alc, col = "darkgrey", cex = 0.5, xlim = absences.lims)
+plot(absences, alc, col = "darkgrey", cex = 0.5, xlim = absences.lims,ylim = c(-1,6))
 lines(absences.grid, pred.step$fit, col = "red", lwd = 2)
 matlines(absences.grid, se.bands, col = "red", lty = "dashed")
 
-detach(data)
+detach(dataTmp)
 
 
 ```
+Steps based on absences, we can see that majority of students has less than 13 absences.
+
+
 ```{r }
-attach(data)
+attach(dataTmp)
 age.lims <- range(age)
 age.grid <- seq(age.lims[1], age.lims[2])
 
 studytime.lims <- range(studytime)
 studytime.grid <- seq(studytime.lims[1], studytime.lims[2])
 
-detach(data)
+detach(dataTmp)
 ```
 step function for age
 
 ```{r }
 #X y
-attach(data)
+attach(dataTmp)
 age.lims <- range(age)
 age.grid <- seq(age.lims[1], age.lims[2])
 
 #print(data$age)
 table(cut(age, breaks = 6))
 
-fit.step <- lm(alc ~ cut(age, 6), data = data)
+fit.step <- lm(alc ~ cut(age, 6), data = dataTmp)
 pred.step <- predict(fit.step, list(age = age.grid), se.fit = TRUE)
 se.bands <- cbind(pred.step$fit + 2 * pred.step$se.fit, 
                   pred.step$fit - 2 * pred.step$se.fit)
@@ -458,7 +469,7 @@ lines(age.grid, pred.step$fit, col = "red", lwd = 2)
 matlines(age.grid, se.bands, col = "red", lty = "dashed")
 
 #plot(age,alc)
-detach(data)
+detach(dataTmp)
 ```
 
 ##Natural splines
@@ -517,6 +528,9 @@ text(alc.high.tree, pretty = 0)
 detach(data)
 
 ```
+Classification error around 17.5%.
+Mostly used features: "goout"      "absences"   "freetime"   "age"        "G2"         "G3"  
+
 
 
 ```{r }
@@ -530,7 +544,7 @@ Most important predicators are at the top of the tree and the ones which splits 
 attach(data)
 set.seed(1)
 n <- nrow(data)
-train <- sample(1:n, n / 2)
+train <- sample(1:n, 3*n / 4)
 test <- -train
 alc.high.tree <- tree(High ~ . - alc, data = data, subset = train)
 tree.class <- predict(alc.high.tree, newdata = data[test,], type = "class")
@@ -540,6 +554,7 @@ plot(alc.high.tree)
 text(alc.high.tree, pretty = 0)
 detach(data)
 ```
+When we want to classify new data error is around 22%.
 
 ###pruning
 ```{r }
@@ -562,60 +577,66 @@ print(alc.high.pruned)
 detach(data)
 ```
 
-After pruning optimal tree has only 2 levels and most important nodes are: gout and G3(final grade). estimated error rate is equal to around 26%
+After pruning optimal tree has only 2 levels and most important nodes are: gout and G3(final grade). estimated error rate is equal to around 20% it is higher than i previous case.
 
 
 ## Random forests
 
 ### Bagging
 ```{r }
-attach(data)
+attach(dataTmp)
 library(randomForest)
-alc.bag <- randomForest(alc ~ ., data = data, mtry = 3, importance = TRUE)
+alc.bag <- randomForest(alc ~ ., data = dataTmp, mtry = 3, importance = TRUE)
 alc.bag
 
 plot(alc.bag, type = "l")
 
 importance(alc.bag)
 varImpPlot(alc.bag)
-detach(data)
+detach(dataTmp)
 ```
+Lowest error is around 18% misclassyfication. There is no reason to have more than 150 trees.
 
 
+# sprawdzenie ile zle sklasyfikowanych
 ```{r }
-attach(data)
+attach(dataTmp)
 set.seed(1)
-alc.bag <- randomForest(alc ~ ., data = data, subset = train, mtry = 3,
+alc.bag <- randomForest(alc ~ ., data = dataTmp, subset = train, mtry = 3,
                          importance = TRUE,ntree = 250)
-alc.pred.bag <- predict(alc.bag, newdata = data[test,])
-mean((alc.pred.bag - data$alc[test])^2)
+alc.pred.bag <- predict(alc.bag, newdata = dataTmp[test,])
+mean((alc.pred.bag - dataTmp$alc[test])^2)
 
 
-detach(data)
+detach(dataTmp)
 ```
+For 250 trees we can observe error rate around 16.5%.
+
+```{r }
+attach(dataTmp)
+set.seed(2)
+alc.bag.s <- randomForest(alc ~ ., data = dataTmp, subset = train, mtry = 3,
+                         importance = TRUE, ntree = 70)
+alc.pred.bag <- predict(alc.bag.s, newdata = dataTmp[test,])
+mean((alc.pred.bag - dataTmp$alc[test])^2)
+
+detach(dataTmp)
+```
+For 70 trees we can observe error rate around 17.4%.
 
 
 ```{r }
-attach(data)
+attach(dataTmp)
 set.seed(2)
-alc.bag.s <- randomForest(alc ~ ., data = data, subset = train, mtry = 3,
+alc.bag.s <- randomForest(alc ~ ., data = dataTmp, subset = train, mtry = 3,
                          importance = TRUE, ntree = 10)
-alc.pred.bag <- predict(alc.bag.s, newdata = data[test,])
-mean((alc.pred.bag - data$alc[test])^2)
+alc.pred.bag <- predict(alc.bag.s, newdata = dataTmp[test,])
+mean((alc.pred.bag - dataTmp$alc[test])^2)
 
-detach(data)
+detach(dataTmp)
 ```
+For 10 trees we can observe error rate around 18.6%.
 
-## Summary 
-
-
-
-MF: what is this??
-## Including Plots
-You can also embed plots, for example: 
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
+##Summary
 
 
