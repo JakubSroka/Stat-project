@@ -637,6 +637,6 @@ detach(dataTmp)
 ```
 For 10 trees we can observe error rate around 18.6%.
 
-##Summary
-
+## Summary
+W powyższym projekcie udało nam się z zadawalającą dokładnością stworzyć klasyfikatory, których błąd wahał się pomiędzy 15-20 % złych odpowiedzi. Spodziewlaiśmy się że najlepsze wyniki uzyskamy dla klasyfikatorów nieliniowych, a w szczegolności lasów losowych, gdyż dane, których użyliśmy przeważnie dane kategoryczn, a nie ciągłe. Jednak duża częśc kategorii opierała się na podziale rozkładu ciągłego na kubełki np. relacja z rodziną od 1-5. Podejrzewamy że w dużym stopniu z tego powody, oraz z jakości samych danych dało to dobre wyniki predykcji z błędem na poziomie około 19 procent w przypadku regresji logistycznej oraz LDA. Regresjia liniowa była dobrym wstępem i pierwszym szacunkiem, który pozwolił nam wyłonić znaczące parametry do dalszych predykcji przy użyciu modeli liniowych . KNN i QDA okazały się być nieodpowiednimi modelami gdyż w ich przypadku błędy były dość znaczące(nawet 35 % błędu w przypadku KNN). Spliny i Lasso posłużyły nam głównie do obserwacji pewnych zależności i tendencji w używanych danych. 
 
